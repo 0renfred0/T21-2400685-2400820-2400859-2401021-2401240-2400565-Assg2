@@ -1,0 +1,67 @@
+# ---------------------------------------------------------------------------
+# Python
+# ---------------------------------------------------------------------------
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Packaging / build output
+build/
+dist/
+*.egg-info/
+.eggs/
+pip-wheel-metadata/
+
+# Virtual environments (create yours with: python -m venv .venv)
+.venv/
+venv/
+env/
+ENV/
+.python-version
+
+# Tooling caches
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
+.ipynb_checkpoints/
+
+# Secrets / local config
+.env
+.env.*
+
+# ---------------------------------------------------------------------------
+# Editors and operating systems
+# ---------------------------------------------------------------------------
+.vscode/
+.idea/
+*.swp
+*~
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ---------------------------------------------------------------------------
+# Project outputs
+# ---------------------------------------------------------------------------
+# Default save folder for the GUI and CLI. Copy the outputs you want to keep
+# for the report into docs/figures/ and commit them from there.
+output/
+# Default output folder of `python -m seam_carving.benchmark`.
+results/
+
+# ---------------------------------------------------------------------------
+# Report and presentation working files
+# ---------------------------------------------------------------------------
+# Office lock and temp files
+~$*
+*.tmp
+# Recordings are large. Upload the video to YouTube and put the link in the report.
+*.mp4
+*.mov
+*.mkv
+*.avi

@@ -1,0 +1,34 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "seam-carving-t21"
+version = "0.1.0"
+description = "Content-aware image resizing (seam carving) with Dynamic Programming, Greedy and Graph Cut seam finders."
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = ["numpy>=1.24", "Pillow>=10.0"]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0", "ruff>=0.6"]
+
+[project.scripts]
+seam-carving = "seam_carving.__main__:run"
+seam-carving-cli = "seam_carving.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["seam_carving*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+# -ra prints a summary of skipped tests, which shows which algorithms are still TODO.
+addopts = "-ra"
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "NPY"]

@@ -1,0 +1,5 @@
+# Runtime dependencies for the seam-carving demo.
+# Tkinter (the GUI toolkit) ships with Python on Windows and macOS.
+# On Debian/Ubuntu install it with: sudo apt install python3-tk
+numpy>=1.24
+Pillow>=10.0
