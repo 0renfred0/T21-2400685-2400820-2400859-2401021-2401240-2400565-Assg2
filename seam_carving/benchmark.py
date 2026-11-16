@@ -9,7 +9,7 @@ the same energy map. Saves the outputs and a side-by-side montage::
 ``scaling``: time a single seam on random energy maps of growing size and fit the empirical
 exponent of time vs. pixel count (about 1.0 means linear, i.e. O(H*W))::
 
-    python -m seam_carving.benchmark scaling --sizes 50 100 200 400
+    python -m seam_carving.benchmark scaling --sizes 16 32 64
 
 Algorithms that are still stubs are skipped and listed.
 """
@@ -26,11 +26,11 @@ from pathlib import Path
 import numpy as np
 
 from .algorithms import ALGORITHMS, Algorithm, get_algorithm, is_implemented
-from .carver import SEAM_ORDERS, carve
+from .carver import SEAM_ORDERS, carve, plan_orientations
 from .cli import parse_size
 from .energy import DEFAULT_ENERGY, ENERGY_OPTIONS, EnergyOption, get_energy
 from .image_io import load_image, save_image
-from .seams import seam_cost, validate_vertical_seam
+from .seams import HORIZONTAL, seam_cost, validate_vertical_seam
 from .visualization import draw_seams, energy_to_image, montage
 
 
@@ -70,8 +70,14 @@ def compare(
 ) -> list[dict]:
     """Carve ``image`` with each algorithm. Returns one summary row per algorithm."""
     energy_map = energy.fn(image)
+    h, w = image.shape[:2]
+    plan = plan_orientations(w - target_width, h - target_height, order)
+    first_energy = energy_map.T if plan and plan[0] == HORIZONTAL else energy_map
+    first_energy.flags.writeable = False
     first_seams = {
-        a.key: validate_vertical_seam(a.find_seam(energy_map), *energy_map.shape, source=a.label)
+        a.key: validate_vertical_seam(
+            a.find_seam(first_energy), *first_energy.shape, source=a.label
+        )
         for a in algorithms
     }
     dp_first = first_seams.get("dp")
@@ -81,26 +87,29 @@ def compare(
         [[("Original", image), (f"Energy ({energy.label})", energy_to_image(energy_map))]],
     )
     for algorithm in algorithms:
-        times, result = [], None
+        total_times, find_times, per_seam_times = [], [], []
+        result = None
         for _ in range(max(1, repeat)):
             result = carve(
                 image, target_width, target_height, algorithm.find_seam, energy.fn, order=order
             )
-            times.append(result.total_time)
+            total_times.append(result.total_time)
+            find_times.append(result.find_time)
+            per_seam_times.append(result.ms_per_seam)
         assert result is not None
         first = first_seams[algorithm.key]
-        first_cost = seam_cost(energy_map, first)
+        first_cost = seam_cost(first_energy, first)
         row = {
             "algorithm": algorithm.label,
             "seams": len(result.seams),
-            "total_s": f"{statistics.median(times):.3f}",
-            "find_s": f"{result.find_time:.3f}",
-            "ms_per_seam": f"{result.ms_per_seam:.2f}",
+            "total_s": f"{statistics.median(total_times):.3f}",
+            "find_s": f"{statistics.median(find_times):.3f}",
+            "ms_per_seam": f"{statistics.median(per_seam_times):.2f}",
             "removed_energy": f"{result.total_cost:.1f}",
             "first_seam_cost": f"{first_cost:.1f}",
         }
         if dp_first is not None:
-            dp_cost = seam_cost(energy_map, dp_first)
+            dp_cost = seam_cost(first_energy, dp_first)
             row["first_cost_vs_dp"] = f"{first_cost / dp_cost:.3f}" if dp_cost > 0 else "n/a"
             row["mean_col_diff_vs_dp"] = f"{np.mean(np.abs(first - dp_first)):.2f}"
         rows.append(row)
@@ -188,7 +197,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_cmp.add_argument("--out-dir", type=Path, default=Path("results"))
 
     p_sc = sub.add_parser("scaling", help="time one seam on growing random energy maps")
-    p_sc.add_argument("--sizes", type=int, nargs="+", default=[50, 100, 200, 400])
+    p_sc.add_argument("--sizes", type=int, nargs="+", default=[16, 32, 64])
     p_sc.add_argument("-a", "--algorithms", nargs="+", choices=algo_keys)
     p_sc.add_argument("--repeat", type=int, default=3, help="runs per size (best time)")
     p_sc.add_argument("--seed", type=int, default=0)

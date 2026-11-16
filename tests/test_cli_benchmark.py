@@ -2,13 +2,17 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
+
 import numpy as np
 import pytest
 
 from seam_carving import benchmark, cli
 from seam_carving.algorithms import Algorithm
+from seam_carving.carver import carve
 from seam_carving.energy import DEFAULT_ENERGY
 from seam_carving.image_io import load_image, save_image
+from seam_carving.seams import seam_cost
 from tests.helpers import leftmost_seam
 
 
@@ -77,6 +81,27 @@ def test_benchmark_compare(tmp_path, rgb_image):
     assert rows[0]["first_cost_vs_dp"] == "1.000"  # FAKE has key "dp", so it is its own reference
     for name in ("t_dp_result.png", "t_dp_seams.png", "t_comparison.png", "t_summary.csv"):
         assert (tmp_path / name).exists()
+
+
+def test_benchmark_reports_median_for_all_timings(monkeypatch, rgb_image):
+    result = carve(rgb_image, 12, 12, leftmost_seam)
+    runs = iter(
+        replace(result, total_time=total, find_time=find)
+        for total, find in [(3.0, 0.6), (1.0, 0.1), (9.0, 1.8)]
+    )
+    monkeypatch.setattr(benchmark, "carve", lambda *args, **kwargs: next(runs))
+    row = benchmark.compare(rgb_image, 12, 12, [FAKE], DEFAULT_ENERGY, repeat=3)[0]
+    assert row["total_s"] == "3.000"
+    assert row["find_s"] == "0.600"
+    assert row["ms_per_seam"] == "150.00"
+
+
+@pytest.mark.parametrize("target_width, order", [(16, "width-first"), (12, "height-first")])
+def test_benchmark_compares_first_horizontal_seam(rgb_image, target_width, order):
+    row = benchmark.compare(rgb_image, target_width, 9, [FAKE], DEFAULT_ENERGY, order=order)[0]
+    energy = DEFAULT_ENERGY.fn(rgb_image).T
+    expected = seam_cost(energy, leftmost_seam(energy))
+    assert row["first_seam_cost"] == f"{expected:.1f}"
 
 
 def test_benchmark_scaling_is_linear_for_linear_algorithm():

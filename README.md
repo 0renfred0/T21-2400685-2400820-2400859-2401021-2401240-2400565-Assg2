@@ -50,11 +50,11 @@ explain every part, because the project quiz (Week 13) is based on this code and
 | Item | Requirement | Where | Status |
 |------|-------------|-------|--------|
 | 1a | Energy map (gradient / Sobel) | [`seam_carving/energy.py`](seam_carving/energy.py) | ✅ Done |
-| 1b | DP minimum seam, vertical **and** horizontal | [`algorithms/dynamic_programming.py`](seam_carving/algorithms/dynamic_programming.py). Horizontal seams come from the carver (transposition) | ⬜ TODO |
+| 1b | DP minimum seam, vertical **and** horizontal | [`algorithms/dynamic_programming.py`](seam_carving/algorithms/dynamic_programming.py). Horizontal seams come from the carver (transposition) | ✅ Done |
 | 1c | Remove the seam, recompute, repeat | [`seam_carving/carver.py`](seam_carving/carver.py) | ✅ Done |
 | 2  | Questions: exponential seams, subproblems, divide and conquer | Report. Brute-force seam counter in [`tests/helpers.py`](tests/helpers.py) | ⬜ TODO |
-| 3  | Greedy algorithm and comparison with DP | [`algorithms/greedy.py`](seam_carving/algorithms/greedy.py) and [`benchmark.py`](seam_carving/benchmark.py) | ⬜ TODO |
-| 4  | Graph cut (min-cut / max-flow) and comparison with DP | [`algorithms/graph_cut.py`](seam_carving/algorithms/graph_cut.py) and [`benchmark.py`](seam_carving/benchmark.py) | ⬜ TODO |
+| 3  | Greedy algorithm and comparison with DP | [`algorithms/greedy.py`](seam_carving/algorithms/greedy.py) and [`benchmark.py`](seam_carving/benchmark.py) | ✅ Code done; report pending |
+| 4  | Graph cut (min-cut / max-flow) and comparison with DP | [`algorithms/graph_cut.py`](seam_carving/algorithms/graph_cut.py) and [`benchmark.py`](seam_carving/benchmark.py) | ✅ Code done; report pending |
 | 5  | Analysis: complexity, comparison, improvements | Report. Data from `python -m seam_carving.benchmark` | ⬜ TODO |
 | 7a | **Bonus**: step-by-step visualisation, all seams shown | GUI animation, *Removed seams* view, `cli.py --gif` | ✅ Done |
 | 7b | **Bonus**: interactive resizing | GUI sliders, *Use result as input* | ✅ Done |
@@ -62,9 +62,10 @@ explain every part, because the project quiz (Week 13) is based on this code and
 | 8  | Presentation video (YouTube link in the report) | | ⬜ TODO |
 | 9  | Report (team ID, SIT IDs, links, AI declaration) | XSite Dropbox | ⬜ TODO |
 
-The GUI, energy maps, carving loop, visualisation, benchmarks, tests and CI are working. The
-three seam finders are **stubs** with step-by-step comments. Until one is implemented, the app
-reports it as "not implemented yet" and its tests are skipped.
+All three seam finders are implemented and share the GUI, energy maps, carving loop,
+visualisation and benchmarks. DP uses rolling-row costs with compact parent offsets; Greedy
+makes local choices; Graph Cut uses Edmonds-Karp max-flow. Report writing and presentation
+materials remain to be completed.
 
 ---
 
@@ -95,6 +96,12 @@ python main.py
 
 `python main.py samples/castle.png` opens the app with an image already loaded.
 
+On Windows you can also use the virtual environment directly, without activating it:
+
+```powershell
+.\.venv\Scripts\python.exe main.py samples/castle.png
+```
+
 ---
 
 ## Using the app
@@ -103,7 +110,7 @@ python main.py
    can be downscaled to 800 px on load, because seam carving recomputes everything for every
    seam.
 2. **Choose the algorithm** from the dropdown: *Dynamic Programming*, *Greedy Algorithm* or
-   *Graph Cut*. The label under it shows whether that algorithm is implemented yet.
+   *Graph Cut*. All three should show **Ready**. Use the small sample for Graph Cut.
 3. **Choose the energy function**: *Sobel filter* or *Gradient magnitude (L1)*.
 4. **Set the target width and height** with the sliders or the number boxes. You can also pick
    the **seam order**: width first, height first, or interleaved.
@@ -138,7 +145,7 @@ means the algorithm is not implemented yet, and `3` means it returned an invalid
 **Compare all algorithms** (items 3 and 4: seams, visual quality, running time):
 
 ```bash
-python -m seam_carving.benchmark compare samples/castle.png --width 75% --repeat 3
+python -m seam_carving.benchmark compare samples/small_shapes.png --width 85% --repeat 3
 ```
 
 This prints a Markdown table you can paste into the report and saves `results/<name>_comparison.png`
@@ -146,15 +153,18 @@ This prints a Markdown table you can paste into the report and saves `results/<n
 `<name>_summary.csv`. The columns are:
 
 * `total_s`, `find_s`, `ms_per_seam`: running time (median over `--repeat` runs).
-* `removed_energy`: the total energy of all removed seams. Lower means less visible damage.
+* `removed_energy`: the total energy of all removed seams. This is an energy-based proxy;
+  inspect the output images to assess visual quality.
 * `first_seam_cost`, `first_cost_vs_dp`: the cost of the first seam on the **same** energy
-  map, and its ratio to DP's. DP and Graph Cut should both give exactly `1.000`.
-* `mean_col_diff_vs_dp`: how far (in columns) the first seam is from DP's, on average.
+  map, oriented to match the first removal, and its ratio to DP's. DP and Graph Cut should
+  both give `1.000` when DP's cost is positive; a zero DP cost is reported as `n/a`.
+* `mean_col_diff_vs_dp`: how far the first seam is from DP's, on average. Columns are in the
+  oriented energy map, so this measures original row differences for horizontal seams.
 
 **Scaling experiment** (item 5b: check the Big-O empirically):
 
 ```bash
-python -m seam_carving.benchmark scaling --sizes 50 100 200 400 --csv results/scaling.csv
+python -m seam_carving.benchmark scaling --sizes 16 32 64 --csv results/scaling.csv
 ```
 
 This times one seam on random `n x n` energy maps and fits `time ~ (H*W)^k`.
@@ -165,7 +175,13 @@ This times one seam on random `n x n` energy maps and fits `time ~ (H*W)^k`.
 > drawing conclusions. Graph Cut should show a clearly superlinear `k`.
 
 Graph Cut in pure Python is slow, so use `samples/small_shapes.png` (64x40) or small `--sizes`
-for it.
+for it. The default scaling sizes are 16, 32 and 64. For larger images and scaling experiments,
+select only DP and Greedy:
+
+```bash
+python -m seam_carving.benchmark compare samples/castle.png --width 75% -a dp greedy --repeat 3
+python -m seam_carving.benchmark scaling --sizes 50 100 200 400 -a dp greedy --csv results/scaling_large.csv
+```
 
 ---
 
@@ -177,9 +193,9 @@ for it.
 ├── seam_carving/
 │   ├── algorithms/
 │   │   ├── __init__.py           # registry for the dropdown/CLI and the seam-finder contract
-│   │   ├── dynamic_programming.py    # TODO: find_vertical_seam_dp
-│   │   ├── greedy.py                 # TODO: find_vertical_seam_greedy
-│   │   └── graph_cut.py              # TODO: find_vertical_seam_graph_cut
+│   │   ├── dynamic_programming.py    # rolling-row DP and compact parent offsets
+│   │   ├── greedy.py                 # locally cheapest connected walk
+│   │   └── graph_cut.py              # minimum cut via Edmonds-Karp max-flow
 │   ├── energy.py                 # energy maps: Sobel, gradient (NumPy only)
 │   ├── seams.py                  # seam checking, cost and removal
 │   ├── carver.py                 # carving loop, horizontal seams by transposition, timing
@@ -206,8 +222,8 @@ resizing, as the brief requires.
 
 ## Implementing a seam finder (for team members)
 
-Each algorithm is **one function** in `seam_carving/algorithms/`. Its docstring and comments
-walk through the steps, edge cases and report questions.
+Each algorithm is **one function** in `seam_carving/algorithms/`. Its docstring explains the
+algorithm and complexity. Preserve the following contract when changing a seam finder.
 
 **Contract** (the same for all three):
 
@@ -220,8 +236,7 @@ def find_vertical_seam_xxx(energy: np.ndarray) -> np.ndarray:
 
 * You only need **vertical** seams. The carver runs the same function on the transposed
   energy map to get horizontal seams.
-* Delete the `raise NotImplementedError(...)` line once your code works. The dropdown then
-  shows **● Ready**.
+* All three implementations are ready; their tests must pass without skipping.
 * The carver checks every seam you return and tells you exactly what is wrong (wrong length,
   out of bounds, not connected, ...).
 
@@ -246,7 +261,7 @@ complexity.
 ```bash
 pytest                                   # everything
 pytest tests/test_algorithms.py -k dp    # one algorithm
-pytest -ra                               # also list skipped tests, i.e. what is still TODO
+pytest -ra                               # include reasons for any skipped GUI tests
 ```
 
 | File | What it checks |
@@ -259,9 +274,8 @@ pytest -ra                               # also list skipped tests, i.e. what is
 | `test_cli_benchmark.py` | CLI outputs and exit codes, benchmark tables and files |
 | `test_gui.py` | End-to-end GUI run: open, carve, switch views, stop (skipped when there is no display) |
 
-Tests for an algorithm that still raises `NotImplementedError` are **skipped**, not failed,
-so the suite stays green while work is in progress. `pytest -ra` lists what is still pending.
-When all three algorithms are done, nothing should be skipped.
+The readiness test fails if a seam finder becomes a stub again. All algorithm tests should
+run without skipping. GUI tests may be skipped if Tkinter or a display is unavailable.
 
 ---
 
@@ -297,9 +311,15 @@ Points worth explaining in the report:
 * **Seam order.** Width first, height first, or interleaved. Avidan and Shamir pick the
   *optimal* order with a further DP over a transport map, which could be discussed as an
   alternative.
+* **DP memory and complexity.** Only one row of cumulative costs is retained, with one int8
+  parent offset per pixel for reconstruction. This is O(H*W) time and space, with O(W)
+  floating-point costs. Greedy scans the first row, then up to three neighbours per row:
+  O(W+H) time and O(H) output space. Graph Cut uses O(H*W) graph space and has the
+  Edmonds-Karp worst-case time O(V*E^2), where V and E are both O(H*W).
 * **Graph Cut and the last column.** With the brief's literal construction (an infinite edge
   from the last column to the sink), the last column can never be part of a seam, and a
-  one-column image gives an infinite flow. `graph_cut.py` explains the fix, and
+  one-column image gives an infinite flow. The last-column sink edge instead uses that
+  pixel's energy. `graph_cut.py` explains the fix, and
   `test_optimal_seam_on_the_border` checks it.
 * **Optimal per seam is not optimal overall.** DP and Graph Cut both find the cheapest seam at
   every step. When two seams cost the same they may pick different ones, so their *cumulative*
@@ -354,7 +374,7 @@ The brief requires the report to say how AI tools were used and to list the main
 | Part | Tool | How it was used |
 |------|------|-----------------|
 | Project scaffold: GUI, energy functions, carving loop, visualisation, CLI, benchmarks, tests, CI, README, `.gitignore` | Claude Code (Anthropic) | Generated from the prompt below, then reviewed by the team |
-| Dynamic Programming / Greedy / Graph Cut implementations | _to be filled in by each owner_ | |
+| Dynamic Programming / Greedy / Graph Cut implementations, benchmark fixes and regression tests | Codex (OpenAI) | Implemented the seam finders, corrected benchmark timing/orientation, and ran local tests and sample comparisons; team review remains required |
 | Report and slides | _to be filled in_ | |
 
 Main prompt for the scaffold (the assignment brief and rubric PDFs were attached):
@@ -367,3 +387,8 @@ Main prompt for the scaffold (the assignment brief and rubric PDFs were attached
 > Greedy Algorithm, or Graph Cut. But have the functions commented out for my team mates to
 > complete. Please do this setup in a branch called setup then push to main thank you. Also
 > implement the readme and gitignore as you believe would be required for the scenario"
+
+Main follow-up prompt for the algorithm implementations (using the assignment brief,
+rubric and existing scaffold as context):
+
+> "let's just do what we can in the implementation and not care about the work split."
