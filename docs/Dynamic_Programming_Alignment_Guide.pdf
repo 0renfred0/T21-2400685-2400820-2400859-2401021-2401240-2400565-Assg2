@@ -1,0 +1,206 @@
+%PDF-1.4
+1 0 obj
+<< /Type /Catalog /Pages 2 0 R >>
+endobj
+2 0 obj
+<< /Type /Pages /Kids [4 0 R 6 0 R 8 0 R] /Count 3 >>
+endobj
+3 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>
+endobj
+4 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 3 0 R >> >> /Contents 5 0 R >>
+endobj
+5 0 obj
+<< /Length 1701 >>
+stream
+BT
+/F1 18 Tf
+50 760 Td
+(Dynamic Programming Seam Carving) Tj
+0 -30 Td
+/F1 10.5 Tf
+(How the current project aligns with Assignment 2 Q1 and Q2) Tj
+0 -14 Td
+0 -10 Td
+(Q1: Implement seam carving with Dynamic Programming) Tj
+0 -14 Td
+0 -10 Td
+(1. Energy map) Tj
+0 -14 Td
+(File: seam_carving/energy.py) Tj
+0 -14 Td
+(The project provides gradient_energy\(\) and sobel_energy\(\). Both assign an energy value to) Tj
+0 -14 Td
+(every pixel. High energy marks edges or important detail, while low energy identifies pixels) Tj
+0 -14 Td
+(that can be removed with less visible disruption.) Tj
+0 -14 Td
+0 -10 Td
+(2. Minimum-energy seam) Tj
+0 -14 Td
+(File: seam_carving/algorithms/dynamic_programming.py) Tj
+0 -14 Td
+(The function find_vertical_seam_dp\(energy\) finds one optimal vertical seam. A seam contains) Tj
+0 -14 Td
+(one pixel in every row and may move left, stay in the same column, or move right by one) Tj
+0 -14 Td
+(column between rows.) Tj
+0 -14 Td
+0 -10 Td
+(The code implements this recurrence:) Tj
+0 -14 Td
+(M[0, j] = e[0, j]) Tj
+0 -14 Td
+(M[i, j] = e[i, j] + min\(M[i-1, j-1], M[i-1, j], M[i-1, j+1]\)) Tj
+0 -14 Td
+0 -10 Td
+(In the code, costs holds the previous cumulative-cost row. padded inserts infinity on both) Tj
+0 -14 Td
+(sides, so invalid moves beyond the left or right image border cannot be selected. parents) Tj
+0 -14 Td
+(contains the upper-left, upper, and upper-right predecessor cost for each pixel. choices) Tj
+0 -14 Td
+(selects the cheapest predecessor.) Tj
+0 -14 Td
+0 -10 Td
+(back stores each chosen predecessor as -1, 0, or +1. The algorithm chooses the lowest cost) Tj
+0 -14 Td
+(in the final row and follows these offsets back to row zero, returning the full seam.) Tj
+0 -14 Td
+ET
+endstream
+endobj
+6 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 3 0 R >> >> /Contents 7 0 R >>
+endobj
+7 0 obj
+<< /Length 2011 >>
+stream
+BT
+/F1 18 Tf
+50 760 Td
+(Q1 continued: horizontal seams, removal, and repetition) Tj
+0 -30 Td
+/F1 10.5 Tf
+0 -10 Td
+(File: seam_carving/carver.py) Tj
+0 -14 Td
+(A horizontal seam is a vertical seam in a transposed image. The carver transposes the energy) Tj
+0 -14 Td
+(map, calls the same DP function, and converts the result back. This is why one DP) Tj
+0 -14 Td
+(implementation correctly handles both vertical and horizontal resizing.) Tj
+0 -14 Td
+0 -10 Td
+(For each seam, carve\(\) performs this sequence:) Tj
+0 -14 Td
+(1. Compute a fresh energy map for the current image.) Tj
+0 -14 Td
+(2. Call find_vertical_seam_dp\(\) on the energy map.) Tj
+0 -14 Td
+(3. Validate the seam and remove one selected pixel per row.) Tj
+0 -14 Td
+(4. Repeat until the requested width and height are reached.) Tj
+0 -14 Td
+0 -10 Td
+(The energy map is recomputed after every removal because the removed seam changes the) Tj
+0 -14 Td
+(neighbouring pixels and therefore their energy. This directly satisfies Q1\(a\), Q1\(b\), and) Tj
+0 -14 Td
+(Q1\(c\).) Tj
+0 -14 Td
+0 -10 Td
+(Complexity) Tj
+0 -14 Td
+(For an H by W energy map, one DP seam takes O\(HW\) time. The code uses O\(W\) floating-point) Tj
+0 -14 Td
+(memory for cumulative costs and O\(HW\) int8 memory for back-pointers needed to reconstruct) Tj
+0 -14 Td
+(the seam.) Tj
+0 -14 Td
+0 -10 Td
+(Q2 connection) Tj
+0 -14 Td
+(Q2\(a\)\(i\): Brute force is exponential because, for n greater than 1, choosing between two) Tj
+0 -14 Td
+(adjacent columns in each of m rows already gives at least 2^m valid seams.) Tj
+0 -14 Td
+(Q2\(a\)\(ii\): The recurrence works because an optimal seam ending at a pixel must have an) Tj
+0 -14 Td
+(optimal prefix ending at one of its three valid predecessors. Otherwise a cheaper prefix) Tj
+0 -14 Td
+(would produce a cheaper whole seam.) Tj
+0 -14 Td
+(Q2\(b\): Direct Sobel or gradient convolution with a fixed 3 by 3 filter is already O\(HW\).) Tj
+0 -14 Td
+(Divide and conquer does not improve that asymptotic cost and adds boundary overhead.) Tj
+0 -14 Td
+ET
+endstream
+endobj
+8 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 3 0 R >> >> /Contents 9 0 R >>
+endobj
+9 0 obj
+<< /Length 1158 >>
+stream
+BT
+/F1 18 Tf
+50 760 Td
+(How to explain the project in a demonstration) Tj
+0 -30 Td
+/F1 10.5 Tf
+0 -10 Td
+(Use this flow:) Tj
+0 -14 Td
+(Image -> energy map -> DP cumulative costs -> backtrack the lowest-energy seam -> remove) Tj
+0 -14 Td
+(seam -> recompute energy -> repeat.) Tj
+0 -14 Td
+0 -10 Td
+(Useful files) Tj
+0 -14 Td
+(seam_carving/energy.py: calculates Sobel and gradient energy maps.) Tj
+0 -14 Td
+(seam_carving/algorithms/dynamic_programming.py: finds the optimal vertical seam.) Tj
+0 -14 Td
+(seam_carving/carver.py: handles transpose, removal, recomputation, and repetition.) Tj
+0 -14 Td
+(seam_carving/seams.py: validates and removes seams.) Tj
+0 -14 Td
+(tests/test_algorithms.py: verifies that DP seams are valid and match brute-force optimum on) Tj
+0 -14 Td
+(small maps.) Tj
+0 -14 Td
+0 -10 Td
+(Summary) Tj
+0 -14 Td
+(The DP algorithm itself finds one optimal seam. The carver combines that seam finder with) Tj
+0 -14 Td
+(energy calculation, seam removal, horizontal transposition, and repetition to form the) Tj
+0 -14 Td
+(complete Q1 seam-carving solution. Q2 explains why DP is needed and why the recurrence is) Tj
+0 -14 Td
+(correct.) Tj
+0 -14 Td
+ET
+endstream
+endobj
+xref
+0 10
+0000000000 65535 f 
+0000000009 00000 n 
+0000000058 00000 n 
+0000000127 00000 n 
+0000000197 00000 n 
+0000000323 00000 n 
+0000002076 00000 n 
+0000002202 00000 n 
+0000004265 00000 n 
+0000004391 00000 n 
+trailer
+<< /Size 10 /Root 1 0 R >>
+startxref
+5601
+%%EOF
