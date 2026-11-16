@@ -48,14 +48,14 @@ ALGORITHMS: tuple[Algorithm, ...] = (
         label="Dynamic Programming",
         find_seam=find_vertical_seam_dp,
         source="seam_carving/algorithms/dynamic_programming.py",
-        description="Optimal seam from a cumulative-energy table. Target: O(H*W) per seam.",
+        description="Optimal seam using rolling-row DP and back-pointers. O(H*W) per seam.",
     ),
     Algorithm(
         key="greedy",
         label="Greedy Algorithm",
         find_seam=find_vertical_seam_greedy,
         source="seam_carving/algorithms/greedy.py",
-        description="Takes the cheapest neighbour row by row. O(H) per seam, but not optimal.",
+        description="Takes the cheapest neighbour row by row. O(W+H) per seam, but not optimal.",
     ),
     Algorithm(
         key="graphcut",

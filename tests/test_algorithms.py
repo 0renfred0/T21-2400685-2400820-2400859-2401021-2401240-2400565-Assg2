@@ -1,8 +1,7 @@
 """Correctness tests for the three seam finders.
 
-A finder that still raises ``NotImplementedError`` has its tests **skipped**, not failed, so
-CI stays green while the work is in progress. ``pytest -ra`` lists the skipped tests at the
-end, which doubles as a TODO list.
+Every registered finder must be implemented. The readiness test fails if a finder becomes
+a stub, even though the shared helper skips its remaining algorithm checks.
 
 Run the tests for one algorithm with ``pytest tests/test_algorithms.py -k dp`` (or ``greedy``
 or ``graphcut``).
@@ -21,7 +20,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from seam_carving.algorithms import ALGORITHMS, get_algorithm
+from seam_carving.algorithms import ALGORITHMS, get_algorithm, is_implemented
 from seam_carving.carver import carve
 from seam_carving.seams import seam_cost, validate_vertical_seam
 from tests.helpers import brute_force_min_cost, find_seam_or_skip
@@ -44,6 +43,11 @@ def _read_only(arr: np.ndarray) -> np.ndarray:
 
 
 # --- properties every algorithm must have -------------------------------------------------
+
+
+@ALL
+def test_algorithm_is_implemented(algorithm):
+    assert is_implemented(algorithm), f"{algorithm.label} must not be a stub"
 
 
 @ALL
@@ -105,7 +109,7 @@ def test_optimal_seam_on_the_border(algorithm, column):
     """The cheapest seam is the first or last column.
 
     Graph Cut: an INF edge from the last column to the sink makes this fail for "last". See
-    the GOTCHA note in graph_cut.py.
+    the last-column explanation in graph_cut.py.
     """
     energy = np.ones((5, 6))
     energy[:, 0 if column == "first" else -1] = 0.0

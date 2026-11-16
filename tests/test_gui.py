@@ -17,7 +17,7 @@ if os.environ.get("SKIP_GUI_TESTS") == "1":
 tk = pytest.importorskip("tkinter")
 
 from seam_carving import gui  # noqa: E402
-from seam_carving.algorithms import Algorithm  # noqa: E402
+from seam_carving.algorithms import ALGORITHMS, Algorithm, get_algorithm, is_implemented  # noqa: E402
 from seam_carving.image_io import save_image  # noqa: E402
 from tests.helpers import leftmost_seam  # noqa: E402
 
@@ -86,3 +86,33 @@ def test_stop_cancels_a_run(app, tmp_path, rgb_image):
     app.root.update()
     assert app.result is None
     assert "stopped" in app.status_var.get().lower()
+
+
+@pytest.mark.parametrize("algorithm", ALGORITHMS, ids=lambda a: a.key)
+def test_real_algorithm_through_gui(app, monkeypatch, tmp_path, rgb_image, algorithm):
+    monkeypatch.setattr(gui, "get_algorithm", get_algorithm)
+    monkeypatch.setattr(gui, "is_implemented", is_implemented)
+    dialogs = []
+    monkeypatch.setattr(gui.messagebox, "showerror", lambda *args, **kwargs: dialogs.append(args))
+    monkeypatch.setattr(gui.messagebox, "showinfo", lambda *args, **kwargs: dialogs.append(args))
+
+    app.open_image(save_image(rgb_image, tmp_path / "img.png"), ask_downscale=False)
+    app.algorithm_var.set(algorithm.label)
+    app._on_algorithm_changed()
+    assert app._selected_algorithm() is algorithm
+    assert "Ready" in app.algorithm_status.cget("text")
+
+    app.width_var.set(11)
+    app.height_var.set(9)
+    app.animate_var.set(False)
+    app.start_carving()
+    _wait_until(app, lambda: app.result is not None or dialogs)
+    assert not dialogs
+    result = app.result
+    assert result is not None
+    assert result.image.shape == (9, 11, 3)
+    np.testing.assert_array_equal(result.image, rgb_image[result.source_rows, result.source_cols])
+    assert result.vertical_seams == 5
+    assert result.horizontal_seams == 3
+    assert algorithm.label in app.stats_var.get()
+    assert "5 vertical + 3 horizontal" in app.stats_var.get()

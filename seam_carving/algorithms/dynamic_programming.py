@@ -1,8 +1,5 @@
 """Seam finding with Dynamic Programming (assignment items 1 and 2).
 
-Owner:  <name / SIT ID>
-Status: TODO. The function below is a stub. Write your implementation in its body.
-
 The interface contract is in ``seam_carving/algorithms/__init__.py``. Check your work with::
 
     pytest tests/test_algorithms.py -k dp -v
@@ -44,32 +41,22 @@ def find_vertical_seam_dp(energy: np.ndarray) -> np.ndarray:
         M[i, j] = e[i, j] + min(M[i-1, j-1], M[i-1, j], M[i-1, j+1])   # ignore columns off the edge
 
     The cheapest seam ends at ``argmin_j M[H-1, j]``. Follow the back-pointers up to row 0 to
-    recover it. Target: O(H * W) time per seam.
+    recover it. O(H * W) time and O(H * W) space per seam. Costs use a rolling row;
+    only int8 parent offsets are stored for the full image. Ties choose the leftmost parent.
     """
-    # TODO(team): implement the DP, then delete the `raise` at the bottom.
-    #
-    # Suggested steps:
-    #   1. h, w = energy.shape
-    #      M = energy.astype(np.float64)    # astype copies; `energy` itself is read-only
-    #      back = np.zeros((h, w), dtype=np.intp)   # column of the best parent in row i-1
-    #
-    #   2. Forward pass, for i in 1 .. h-1:
-    #        For every column j, look at the up to 3 parents M[i-1, j-1 .. j+1].
-    #        Store the cheapest one in back[i, j] and set M[i, j] = energy[i, j] + that cost.
-    #        Hint: avoid a Python loop over j. Pad M[i-1] with +inf on both sides,
-    #        stack the left / middle / right shifts into a (3, w) array, then use
-    #        np.argmin along axis 0. That keeps the whole pass O(H * W) and fast in NumPy.
-    #
-    #   3. Backtrack:
-    #        seam = np.empty(h, dtype=np.intp)
-    #        seam[-1] = np.argmin(M[-1])
-    #        for i in range(h - 1, 0, -1): seam[i - 1] = back[i, seam[i]]
-    #
-    #   4. return seam
-    #
-    # Edge cases the tests check: w == 1 (the only seam is all zeros), h == 1, and integer
-    # energies.
-    raise NotImplementedError(
-        "Dynamic Programming seam finder is not implemented yet "
-        "(seam_carving/algorithms/dynamic_programming.py)"
-    )
+    h, w = energy.shape
+    costs = energy[0].astype(np.float64)
+    back = np.zeros((h, w), dtype=np.int8)
+    columns = np.arange(w)
+    for i in range(1, h):
+        padded = np.pad(costs, 1, constant_values=np.inf)
+        parents = np.stack((padded[:-2], padded[1:-1], padded[2:]))
+        choices = np.argmin(parents, axis=0)
+        back[i] = choices - 1
+        costs = energy[i] + parents[choices, columns]
+
+    seam = np.empty(h, dtype=np.intp)
+    seam[-1] = np.argmin(costs)
+    for i in range(h - 1, 0, -1):
+        seam[i - 1] = seam[i] + back[i, seam[i]]
+    return seam
