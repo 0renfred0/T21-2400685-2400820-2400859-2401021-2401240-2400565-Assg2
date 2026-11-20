@@ -373,9 +373,9 @@ The brief requires the report to say how AI tools were used and to list the main
 
 | Part | Tool | How it was used |
 |------|------|-----------------|
-| Project scaffold: GUI, energy functions, carving loop, visualisation, CLI, benchmarks, tests, CI, README, `.gitignore` | Claude Code (Anthropic) | Generated from the prompt below, then reviewed by the team |
-| Dynamic Programming / Greedy / Graph Cut implementations, benchmark fixes and regression tests | Codex (OpenAI) | Implemented the seam finders, corrected benchmark timing/orientation, and ran local tests and sample comparisons; team review remains required |
-| Report and slides | _to be filled in_ | |
+| Project scaffold: GUI, energy functions, carving loop, visualisation, CLI, benchmarks, tests, CI, README, `.gitignore` | AI tools | Used to generate an initial project structure from the assignment brief. The team reviewed the scaffold, checked it against the rubric, made the main implementation decisions, and continued the implementation and documentation work. |
+| Algorithm research, design guidance, implementation support and testing strategy | AI tools | Used as a research and guidance aid to explain seam carving, Dynamic Programming recurrences, optimal substructure, complexity, Greedy and Graph Cut alternatives, boundary cases, and suitable tests and benchmarks. AI tools also provided programming and debugging suggestions. The team did the main implementation work, performed testing ourselves, integrated and reviewed the changes, and used AI suggestions only as support for test cases and debugging. The team remains responsible for understanding and validating the submitted code. |
+| Q1/Q2 explanations and documentation support | AI tools | Used to organise the README, map the implemented code to Q1 and Q2, draft report-ready explanations, and prepare a study guide. The team reviewed the material against the assignment brief and retains responsibility for the final report, presentation, and submission. |
 
 Main prompt for the scaffold (the assignment brief and rubric PDFs were attached):
 
