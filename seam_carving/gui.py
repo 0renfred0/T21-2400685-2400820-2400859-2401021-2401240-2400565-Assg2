@@ -86,9 +86,11 @@ class SeamCarvingApp:
         self.worker: threading.Thread | None = None
         self.cancel_event = threading.Event()
         self.messages: queue.Queue = queue.Queue()
-        self._photos: dict[str, ImageTk.PhotoImage] = {}
+        self._photos: dict[str, ImageTk.PhotoImage] = {}  # keeps pictures alive while on screen
+        # Remembers the last energy image we drew, so flipping between views doesn't recompute
+        # it. The key is (which image, which energy function).
         self._energy_cache: tuple[tuple[int, str], np.ndarray] | None = None
-        self._render_job: str | None = None
+        self._render_job: str | None = None  # a pending "redraw soon" timer, see schedule_render
         # The worker thread reads these plain attributes. Tk variables are not thread-safe.
         self._animate = True
         self._delay_s = 0.02
@@ -112,15 +114,25 @@ class SeamCarvingApp:
         self._on_algorithm_changed()
         self._on_energy_changed()
         self._update_controls()
+
+        # Start the loop that checks for messages from the carving thread (see _poll_worker).
         self.root.after(POLL_MS, self._poll_worker)
+
+        # Open the image from the command line a moment later, once the window has been drawn.
         if initial_image is not None:
             self.root.after(50, lambda: self.open_image(initial_image))
 
     # ------------------------------------------------------------------ UI construction
     def _setup_style(self) -> None:
         style = ttk.Style(self.root)
+
+        # The default theme looks dated on Linux (x11), so use the nicer "clam" theme there.
+        # Windows and macOS already look native.
         if self.root.tk.call("tk", "windowingsystem") == "x11" and "clam" in style.theme_names():
             style.theme_use("clam")
+
+        # A few named styles used above: a bold Carve button, grey hint text, and green/red
+        # labels for "Ready" / "Not implemented yet".
         style.configure("Accent.TButton", font=("TkDefaultFont", 10, "bold"))
         style.configure("Hint.TLabel", foreground="#666666")
         style.configure("Ok.TLabel", foreground="#1e8e3e")
@@ -161,6 +173,8 @@ class SeamCarvingApp:
         body.pack(side=tk.TOP, fill=tk.BOTH, expand=True)
         self._build_controls(body)
 
+        # The input and result panes sit side by side. "uniform" makes the two columns exactly the
+        # same width, so the two pictures are drawn at the same scale and are easy to compare.
         panes = ttk.Frame(body)
         panes.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(8, 0))
         panes.columnconfigure(0, weight=1, uniform="pane")
@@ -290,8 +304,12 @@ class SeamCarvingApp:
         scale.grid(row=row, column=1, sticky="ew", padx=6)
         spin = ttk.Spinbox(parent, from_=1, to=1, textvariable=var, width=6)
         spin.grid(row=row, column=2)
+        # Typing in the box is checked (and clamped to the image size) when the user presses Enter
+        # or clicks away, not on every keystroke, so they can type a number freely.
         spin.bind("<Return>", lambda _e: self._clamp_sizes())
         spin.bind("<FocusOut>", lambda _e: self._clamp_sizes())
+
+        # Whenever the number changes, from the slider or the box, update the other control too.
         var.trace_add("write", lambda *_: self._on_size_var_changed())
         return scale, spin
 
@@ -310,6 +328,7 @@ class SeamCarvingApp:
             )
 
     def _bind_events(self) -> None:
+        # Keyboard shortcuts: Ctrl on Windows/Linux, Cmd on macOS ("aqua" is Tk's name for Mac).
         mod = "Command" if self.root.tk.call("tk", "windowingsystem") == "aqua" else "Control"
         self.root.bind_all(f"<{mod}-o>", lambda _e: self.ask_open_image())
         self.root.bind_all(f"<{mod}-s>", lambda _e: self.save_result())
@@ -318,8 +337,11 @@ class SeamCarvingApp:
         self.root.bind_all("<Escape>", lambda _e: self.stop_carving())
         self.algorithm_combo.bind("<<ComboboxSelected>>", lambda _e: self._on_algorithm_changed())
         self.energy_combo.bind("<<ComboboxSelected>>", lambda _e: self._on_energy_changed())
+        # Redraw the pictures whenever a canvas changes size (the user resizes the window).
         for canvas in (self.input_canvas, self.output_canvas):
             canvas.bind("<Configure>", lambda _e: self.schedule_render())
+
+        # Closing the window goes through close(), which stops any carving first.
         self.root.protocol("WM_DELETE_WINDOW", self.close)
 
     # ------------------------------------------------------------------ control callbacks
@@ -354,15 +376,21 @@ class SeamCarvingApp:
         self.delay_label.configure(text=f"{ms} ms")
 
     def _on_scale_moved(self, var: tk.IntVar, value: str) -> None:
+        # The slider hands us a float, so round it. Only update the number if it really changed:
+        # setting it triggers the size-changed callback, which moves the slider, which would call
+        # us again. Skipping equal values breaks that loop.
         new = int(round(float(value)))
         try:
             if var.get() == new:
                 return
         except tk.TclError:
-            pass
+            pass  # the box held half-typed text, so just overwrite it
         var.set(new)
 
     def _read_size(self, var: tk.IntVar, limit: int) -> int:
+        # Read the number from the box, or fall back to the full size if it isn't a valid number
+        # (e.g. empty). Then keep it between 1 and the image's current size, since we can only
+        # shrink.
         try:
             value = int(var.get())
         except (tk.TclError, ValueError):
@@ -386,6 +414,8 @@ class SeamCarvingApp:
             self.plan_var.set("")
             return
         h, w = self.original.shape[:2]
+
+        # Keep each slider in step with its number box.
         for var, scale in (
             (self.width_var, self.width_scale),
             (self.height_var, self.height_scale),
@@ -396,6 +426,8 @@ class SeamCarvingApp:
                 continue  # the user is still typing
             if int(round(float(scale.get()))) != value:
                 scale.set(value)
+
+        # Show how many seams this choice will remove, e.g. 120 vertical + 0 horizontal.
         tw, th = self._read_size(self.width_var, w), self._read_size(self.height_var, h)
         self.plan_var.set(
             f"Original {w} × {h} px. Will remove {w - tw} vertical + {h - th} horizontal "
@@ -403,6 +435,9 @@ class SeamCarvingApp:
         )
 
     def _update_controls(self) -> None:
+        # Enable or disable every control to match what makes sense right now: you can't carve
+        # without an image, can't save without a result, and can't change settings while a carve
+        # is running (only Stop works then).
         running = self.worker is not None and self.worker.is_alive()
         has_image = self.original is not None
         has_result = self.result is not None
@@ -442,6 +477,8 @@ class SeamCarvingApp:
         except Exception as exc:  # unreadable or unsupported file
             messagebox.showerror("Could not open image", f"{path}\n\n{exc}", parent=self.root)
             return
+        # Every seam needs a fresh energy map, so big photos take a long time. Offer to shrink
+        # them first. (Samples skip this check, since they're already small.)
         h, w = image.shape[:2]
         if (
             ask_downscale
@@ -460,12 +497,15 @@ class SeamCarvingApp:
         self.status_var.set(f"Loaded {path.name} ({w} × {h} px).")
 
     def _set_original(self, image: np.ndarray) -> None:
+        # Start fresh with a new picture: forget the old result and any half-finished animation.
         self.original = image
         self.result = None
         self.preview = None
         self.live_overlay = None
         self._energy_cache = None
         self.view_var.set(VIEW_ORIGINAL)
+
+        # The sliders and boxes can't go above the image's own size (we only shrink).
         h, w = image.shape[:2]
         self.width_scale.configure(to=w)
         self.height_scale.configure(to=h)
@@ -549,6 +589,9 @@ class SeamCarvingApp:
 
         energy = self._selected_energy()
         order = ORDER_CHOICES[self.order_var.get()]
+
+        # Reset the state for a new run. live_overlay starts as the original image and gets a
+        # coloured seam added to it every time one is removed (the "Removed seams" view).
         self.cancel_event.clear()
         self.result = None
         self.preview = None
@@ -556,6 +599,9 @@ class SeamCarvingApp:
         self._animate = bool(self.animate_var.get())
         self.progress.configure(value=0, maximum=(w - tw) + (h - th))
         self.status_var.set(f"Carving with {algorithm.label}…")
+
+        # Carve on a separate thread so the window doesn't freeze. daemon=True means the thread
+        # won't keep the program alive if the user closes the window.
         self.worker = threading.Thread(
             target=self._run_carve,
             args=(self.original, tw, th, algorithm, energy, order),
@@ -581,11 +627,17 @@ class SeamCarvingApp:
         """Runs in the worker thread. It talks to the UI only through ``self.messages``."""
 
         def on_step(step: CarveStep) -> None:
+            # Called before each seam is removed. We never touch the widgets from here: we put a
+            # message on the queue and the main thread picks it up (see _poll_worker).
             if self._animate:
                 self.messages.put(("step", step))
+
+                # Pause so the animation is watchable. cancel_event.wait() sleeps like a normal
+                # delay but wakes up immediately if Stop is pressed, in which case we bail out.
                 if self._delay_s > 0 and self.cancel_event.wait(self._delay_s):
                     raise CarvingCancelled()
             else:
+                # No animation: just report progress and the seam so the overlay can still grow.
                 self.messages.put(("progress", step.index, step.record))
 
         try:
@@ -599,6 +651,8 @@ class SeamCarvingApp:
                 on_step=on_step,
                 cancel_event=self.cancel_event,
             )
+        # However the run ends, tell the main thread, so the buttons come back and the user sees
+        # either the result or a clear message.
         except CarvingCancelled:
             self.messages.put(("cancelled",))
         except NotImplementedError:
@@ -610,6 +664,9 @@ class SeamCarvingApp:
 
     def _poll_worker(self) -> None:
         """Main thread: handle worker messages, then draw only the newest animation frame."""
+        # This runs every POLL_MS milliseconds on the main thread. If the worker produced several
+        # steps since last time, we process all the messages but only draw the newest frame. That
+        # keeps the window responsive even when the animation delay is 0.
         latest: CarveStep | None = None
         try:
             while True:
@@ -635,8 +692,9 @@ class SeamCarvingApp:
                     latest = None
                     self._on_error(message[1], message[2])
         except queue.Empty:
-            pass
+            pass  # the queue is empty, which is the normal way out of the loop above
 
+        # Draw the newest frame: the current image with the seam about to be removed in yellow.
         if latest is not None:
             self.preview = highlight_seam(latest.image, latest.seam, latest.orientation)
             self.progress.configure(value=latest.index)
@@ -645,9 +703,14 @@ class SeamCarvingApp:
                 f"cost {latest.record.cost:.1f}, {latest.elapsed:.1f} s elapsed"
             )
             self.render()
+
+        # Schedule the next check. Tk has no "run forever" loop for this, so we re-arm the timer.
         self.root.after(POLL_MS, self._poll_worker)
 
     def _add_live_seam(self, record: SeamRecord) -> None:
+        # Paint one more removed seam onto the "Removed seams" picture: red for vertical seams
+        # and blue for horizontal ones. The record holds original-image coordinates, so it lines
+        # up with the overlay even though the image is shrinking.
         if self.live_overlay is not None:
             color = VERTICAL_SEAM_COLOR if record.orientation == VERTICAL else HORIZONTAL_SEAM_COLOR
             self.live_overlay[record.rows, record.cols] = color
@@ -699,6 +762,8 @@ class SeamCarvingApp:
     # ------------------------------------------------------------------ rendering
     def schedule_render(self) -> None:
         """Redraw soon. Many resize events in a row lead to a single redraw."""
+        # Dragging a window edge fires dozens of resize events. Cancel the redraw we already
+        # queued and queue a new one, so only the last one actually runs.
         if self._render_job is not None:
             self.root.after_cancel(self._render_job)
         self._render_job = self.root.after(15, self.render)
@@ -706,8 +771,12 @@ class SeamCarvingApp:
     def _input_view(self) -> np.ndarray | None:
         if self.original is None:
             return None
+        # Which picture goes on the left depends on the radio button: the original, its energy map,
+        # or the original with the removed seams drawn on it.
         view = self.view_var.get()
         if view == VIEW_ENERGY:
+            # Computing the energy map is the slow part, so reuse the last one if the image and
+            # the energy function haven't changed.
             energy = self._selected_energy()
             key = (id(self.original), energy.key)
             if self._energy_cache is None or self._energy_cache[0] != key:
@@ -728,6 +797,9 @@ class SeamCarvingApp:
             min(self.input_canvas.winfo_height(), self.output_canvas.winfo_height())
             - 2 * CANVAS_PAD
         )
+        # Use the same scale for both panes, based on the smaller of the two canvases and the
+        # ORIGINAL size, so the carved result visibly looks smaller than the input.
+        # max(..., 1) guards against a zero-sized canvas just after start-up.
         scale = min(max(cw, 1) / w, max(ch, 1) / h)
         if scale >= 1:  # whole-number zoom keeps single-pixel seams crisp
             scale = float(min(MAX_UPSCALE, math.floor(scale)))
@@ -777,6 +849,8 @@ class SeamCarvingApp:
         size = (max(1, round(w * scale)), max(1, round(h * scale)))
         pil = Image.fromarray(ensure_rgb(array))
         if size != (w, h):
+            # Enlarging uses NEAREST so pixels stay sharp squares (and thin seams stay visible).
+            # Shrinking uses BILINEAR, which looks smoother.
             resample = Image.Resampling.NEAREST if scale >= 1 else Image.Resampling.BILINEAR
             pil = pil.resize(size, resample)
         photo = ImageTk.PhotoImage(pil)

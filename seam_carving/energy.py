@@ -32,10 +32,16 @@ SOBEL_Y = SOBEL_X.T.copy()
 def to_grayscale(image: np.ndarray) -> np.ndarray:
     """Convert an RGB (or already grey) image to a float64 intensity image."""
     image = np.asarray(image)
+
+    # Already grey (or a single-channel image): nothing to mix, just switch to floats so the
+    # maths below can't overflow an 8-bit integer.
     if image.ndim == 2:
         return image.astype(np.float64)
     if image.ndim == 3 and image.shape[2] == 1:
         return image[..., 0].astype(np.float64)
+
+    # Colour: a weighted average of R, G and B. Green gets the biggest weight because our eyes
+    # are most sensitive to it. `[..., :3]` ignores an alpha channel if there is one.
     if image.ndim == 3 and image.shape[2] >= 3:
         return image[..., :3].astype(np.float64) @ _LUMA_WEIGHTS
     raise ValueError(f"Expected an (H, W) or (H, W, 3) image, got shape {image.shape}")
@@ -55,12 +61,20 @@ def correlate3x3(gray: np.ndarray, kernel: np.ndarray) -> np.ndarray:
         raise ValueError(f"Expected a 3x3 kernel, got shape {kernel.shape}")
     gray = np.asarray(gray, dtype=np.float64)
     h, w = gray.shape
+
+    # Pad by one pixel (copying the edge pixels) so that pixels on the border still have a full
+    # 3x3 neighbourhood to look at.
     padded = np.pad(gray, 1, mode="edge")
     out = np.zeros((h, w), dtype=np.float64)
+
+    # The trick: instead of sliding a window over every pixel, shift the whole image by one of
+    # the nine offsets, multiply by that kernel weight, and add it all up. `padded[di:di+h,
+    # dj:dj+w]` is the image moved by (di - 1, dj - 1). Nine of these give the same answer as
+    # the sliding window, but NumPy does the inner loops for us.
     for di in range(3):
         for dj in range(3):
             weight = kernel[di, dj]
-            if weight != 0.0:
+            if weight != 0.0:  # Sobel has zeros in the middle column/row, so skip those
                 out += weight * padded[di : di + h, dj : dj + w]
     return out
 
@@ -73,8 +87,14 @@ def gradient_energy(image: np.ndarray) -> np.ndarray:
     """
     gray = to_grayscale(image)
     padded = np.pad(gray, 1, mode="edge")
+
+    # How fast does brightness change across each pixel? Compare the neighbour on the right with
+    # the one on the left (dx), and the one below with the one above (dy).
     dx = padded[1:-1, 2:] - padded[1:-1, :-2]
     dy = padded[2:, 1:-1] - padded[:-2, 1:-1]
+
+    # We only care how big the change is, not whether it goes up or down, so take absolute
+    # values. Flat areas give ~0 (cheap to remove), sharp edges give big numbers.
     return np.abs(dx) + np.abs(dy)
 
 
@@ -85,8 +105,13 @@ def sobel_energy(image: np.ndarray) -> np.ndarray:
     :func:`gradient_energy`.
     """
     gray = to_grayscale(image)
+
+    # gx picks up vertical edges (brightness changing left to right), gy picks up horizontal
+    # edges (changing top to bottom).
     gx = correlate3x3(gray, SOBEL_X)
     gy = correlate3x3(gray, SOBEL_Y)
+
+    # Combine them into one strength with Pythagoras: sqrt(gx^2 + gy^2). hypot does exactly that.
     return np.hypot(gx, gy)
 
 

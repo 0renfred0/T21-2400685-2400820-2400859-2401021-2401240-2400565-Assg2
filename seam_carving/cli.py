@@ -96,6 +96,9 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     image = load_image(args.input)
     height, width = image.shape[:2]
+
+    # Sizes can be pixels ("300") or percentages ("75%"). Turn them into pixels, and report a bad
+    # value as a normal error message rather than a traceback.
     try:
         target_w = parse_size(args.width, width)
         target_h = parse_size(args.height, height)
@@ -103,15 +106,20 @@ def main(argv: Sequence[str] | None = None) -> int:
         print(f"error: {exc}", file=sys.stderr)
         return 1
 
+    # A GIF with one frame per seam would be huge, so only keep about `gif_frames` of them. If we
+    # remove 120 seams and want 60 frames, we keep every second one.
     frames = []
     total_seams = (width - target_w) + (height - target_h)
     every = max(1, total_seams // max(1, args.gif_frames))
 
     def on_step(step: CarveStep) -> None:
+        # Called by the carver just before each seam is removed. We draw the seam about to go in
+        # yellow and pad the frame back to the original size so every GIF frame matches.
         if args.gif and (step.index - 1) % every == 0:
             frame = highlight_seam(step.image, step.seam, step.orientation)
             frames.append(pad_to_shape(frame, height, width))
 
+    # The different failures get different exit codes so scripts (and CI) can tell them apart.
     try:
         result = carve(
             image,
@@ -133,19 +141,25 @@ def main(argv: Sequence[str] | None = None) -> int:
         print(f"error: {exc}", file=sys.stderr)
         return EXIT_INVALID_SEAM if isinstance(exc, InvalidSeamError) else 1
 
+    # If no output path was given, build a descriptive one like output/castle_dp_360x300.png.
     out_h, out_w = result.image.shape[:2]
     output = (
         args.output or DEFAULT_OUTPUT_DIR / f"{args.input.stem}_{algorithm.key}_{out_w}x{out_h}.png"
     )
     save_image(result.image, output)
-    saved = [output]
+    saved = [output]  # remember everything we wrote so we can list it at the end
+
+    # The extras are optional: the seams drawn on the original, the energy map, and the GIF.
     if args.seams:
         saved.append(save_image(draw_seams(image, result.seams), args.seams))
     if args.energy_map:
         saved.append(save_image(energy_to_image(energy.fn(image)), args.energy_map))
     if args.gif:
+        # Imported here because only the GIF option needs Pillow's Image class directly.
         from PIL import Image
 
+        # Finish the animation on the final carved image, then write the GIF. 80 ms per frame,
+        # and loop=0 means it repeats forever.
         frames.append(pad_to_shape(result.image, height, width))
         pil_frames = [Image.fromarray(f) for f in frames]
         args.gif.parent.mkdir(parents=True, exist_ok=True)
@@ -154,6 +168,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         )
         saved.append(args.gif)
 
+    # A short summary of what happened, unless --quiet was given. The timings come straight from
+    # the carver, which measures the seam finder and the energy maps separately.
     if not args.quiet:
         print(f"Algorithm      : {algorithm.label}")
         print(f"Energy         : {energy.label}")

@@ -28,14 +28,21 @@ def validate_vertical_seam(
     Returns the seam as an ``np.intp`` array. Raises :class:`InvalidSeamError` with a message
     that names the first problem it finds.
     """
+    # We check things in the order a beginner is most likely to get them wrong, so the error
+    # message points at the first real problem. Forgetting to `return` gives None, so that
+    # one goes first.
     if seam is None:
         raise InvalidSeamError(f"{source} returned None instead of a seam array")
     arr = np.asarray(seam)
+
+    # One column number per row, nothing more and nothing less.
     if arr.ndim != 1 or arr.shape[0] != height:
         raise InvalidSeamError(
             f"{source} returned an array of shape {arr.shape}; expected ({height},), "
             "one column index per row"
         )
+    # Column indices should be integers. We're a bit forgiving and accept floats like 3.0 (they
+    # sometimes sneak in from NumPy maths), but not 3.5, NaN or infinity.
     if not np.issubdtype(arr.dtype, np.integer):
         integral_floats = (
             np.issubdtype(arr.dtype, np.floating)
@@ -46,6 +53,8 @@ def validate_vertical_seam(
             raise InvalidSeamError(f"{source} returned dtype {arr.dtype}; seams must be integers")
     arr = arr.astype(np.intp, copy=False)
 
+    # Every pixel has to actually be inside the image. argmax on a boolean array gives the
+    # first True, which is how we report the first bad row.
     out_of_bounds = (arr < 0) | (arr >= width)
     if out_of_bounds.any():
         row = int(np.argmax(out_of_bounds))
@@ -54,6 +63,8 @@ def validate_vertical_seam(
             f"(valid columns are 0..{width - 1})"
         )
 
+    # The "seam" rule: neighbouring rows may differ by at most one column. If it jumps further,
+    # the removed pixels wouldn't be connected and the picture would tear.
     jumps = np.abs(np.diff(arr)) > 1
     if jumps.any():
         row = int(np.argmax(jumps))
@@ -67,6 +78,8 @@ def validate_vertical_seam(
 def seam_cost(energy: np.ndarray, seam: np.ndarray) -> float:
     """The total energy of the pixels on ``seam``, which is what seam carving minimises."""
     seam = np.asarray(seam, dtype=np.intp)
+    # Fancy indexing: pair row 0 with seam[0], row 1 with seam[1], and so on, then add up
+    # just those pixels.
     return float(np.asarray(energy)[np.arange(seam.shape[0]), seam].sum())
 
 
@@ -77,6 +90,12 @@ def remove_vertical_seam(array: np.ndarray, seam: np.ndarray) -> np.ndarray:
     order. Runs in O(H * W) time.
     """
     h, w = array.shape[:2]
+
+    # Start by keeping every pixel, then switch off the one pixel per row that's on the seam.
     mask = np.ones((h, w), dtype=bool)
     mask[np.arange(h), seam] = False
+
+    # Boolean indexing flattens the kept pixels in reading order (left to right, top to
+    # bottom). Every row lost exactly one pixel, so reshaping to (h, w - 1) puts them back in
+    # the right rows. The trailing colour-channel dimension (if any) rides along untouched.
     return array[mask].reshape((h, w - 1) + array.shape[2:])

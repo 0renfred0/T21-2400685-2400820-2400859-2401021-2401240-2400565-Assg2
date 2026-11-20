@@ -113,9 +113,11 @@ def plan_orientations(n_vertical: int, n_horizontal: int, order: str = "width-fi
         return [HORIZONTAL] * n_horizontal + [VERTICAL] * n_vertical
     if order == "interleaved":
         plan: list[str] = []
-        v = h = 0
+        v = h = 0  # how many vertical / horizontal seams we've scheduled so far
         while v < n_vertical or h < n_horizontal:
-            # Take whichever orientation is furthest behind its share of the work.
+            # Take whichever orientation is furthest behind its share of the work. The +0.5 stops
+            # both sides from starting at 0% and tying every time. Once one orientation has run
+            # out, the other one just takes all the remaining slots.
             if h >= n_horizontal or (
                 v < n_vertical and (v + 0.5) / n_vertical <= (h + 0.5) / n_horizontal
             ):
@@ -204,7 +206,10 @@ def carve(
         energy = np.asarray(energy_fn(img), dtype=np.float64)
         energy_time += time.perf_counter() - t
 
-        # Horizontal seam = vertical seam of the transposed image.
+        # Horizontal seam = vertical seam of the transposed image. So rather than writing every
+        # algorithm twice, we flip the energy map on its side, ask for a "vertical" seam, and
+        # flip everything back after the pixels are removed. (Every `work_*` variable below is
+        # the transposed view when we're doing a horizontal seam.)
         transpose = orientation == HORIZONTAL
         work_energy = np.ascontiguousarray(energy.T if transpose else energy)
         work_energy.flags.writeable = False  # seam finders must not change their input
@@ -217,6 +222,10 @@ def carve(
         work_img = img.swapaxes(0, 1) if transpose else img
         work_rows = source_rows.T if transpose else source_rows
         work_cols = source_cols.T if transpose else source_cols
+
+        # Look up where each seam pixel lived in the *original* image. The image keeps
+        # shrinking, so its coordinates stop matching the original ones, and this is how the GUI
+        # can still draw all the removed seams on the untouched picture.
         along = np.arange(seam.shape[0])
         record = SeamRecord(
             orientation=orientation,
@@ -237,9 +246,13 @@ def carve(
                 )
             )
 
+        # Delete the seam from the image, and from the two "where did this pixel come from"
+        # maps, so all three stay lined up.
         work_img = remove_vertical_seam(work_img, seam)
         work_rows = remove_vertical_seam(work_rows, seam)
         work_cols = remove_vertical_seam(work_cols, seam)
+
+        # Flip back to the normal orientation if we were working on the transposed copy.
         if transpose:
             img = np.ascontiguousarray(work_img.swapaxes(0, 1))
             source_rows = np.ascontiguousarray(work_rows.T)
@@ -249,6 +262,8 @@ def carve(
         seams.append(record)
 
     return CarveResult(
+        # If no seams were removed, `img` is still the caller's own array, so hand back a copy
+        # rather than something they could accidentally change through our result.
         image=img.copy() if not plan else img,
         seams=seams,
         original_shape=(height, width),
