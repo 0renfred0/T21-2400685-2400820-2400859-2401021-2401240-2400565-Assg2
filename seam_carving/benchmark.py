@@ -35,12 +35,16 @@ from .visualization import draw_seams, energy_to_image, montage
 
 
 def _split_implemented(algorithms: Sequence[Algorithm]) -> tuple[list[Algorithm], list[Algorithm]]:
+    # Split the list into the algorithms we can run and the ones that are still stubs, so the
+    # benchmark can skip the unfinished ones instead of crashing.
     ready = [a for a in algorithms if is_implemented(a)]
     pending = [a for a in algorithms if a not in ready]
     return ready, pending
 
 
 def _print_table(rows: list[dict], columns: list[str]) -> None:
+    # Print a Markdown table. Each column is as wide as its longest entry (or its heading), so
+    # everything lines up and the output can be pasted straight into the report.
     widths = {c: max(len(c), *(len(str(r.get(c, ""))) for r in rows)) for c in columns}
     print("| " + " | ".join(c.ljust(widths[c]) for c in columns) + " |")
     print("|" + "|".join("-" * (widths[c] + 2) for c in columns) + "|")
@@ -71,17 +75,22 @@ def compare(
     """Carve ``image`` with each algorithm. Returns one summary row per algorithm."""
     energy_map = energy.fn(image)
     h, w = image.shape[:2]
+
+    # Compare the *first* seam each algorithm picks on exactly the same energy map. If the first
+    # step is a horizontal seam, the finders work on the transposed map, just like in the carver.
     plan = plan_orientations(w - target_width, h - target_height, order)
     first_energy = energy_map.T if plan and plan[0] == HORIZONTAL else energy_map
-    first_energy.flags.writeable = False
+    first_energy.flags.writeable = False  # the finders promise not to modify their input
     first_seams = {
         a.key: validate_vertical_seam(
             a.find_seam(first_energy), *first_energy.shape, source=a.label
         )
         for a in algorithms
     }
-    dp_first = first_seams.get("dp")
+    dp_first = first_seams.get("dp")  # DP is optimal, so it's the yardstick for the others
 
+    # `rows` collects one summary line per algorithm. `grid` is the picture layout for the
+    # montage: the first row shows the original and its energy map.
     rows, grid = (
         [],
         [[("Original", image), (f"Energy ({energy.label})", energy_to_image(energy_map))]],
@@ -89,6 +98,9 @@ def compare(
     for algorithm in algorithms:
         total_times, find_times, per_seam_times = [], [], []
         result = None
+
+        # Run the whole carve several times and report the median, so one slow run caused by
+        # something else on the computer doesn't skew the result.
         for _ in range(max(1, repeat)):
             result = carve(
                 image, target_width, target_height, algorithm.find_seam, energy.fn, order=order
@@ -109,6 +121,8 @@ def compare(
             "first_seam_cost": f"{first_cost:.1f}",
         }
         if dp_first is not None:
+            # 1.000 means "as cheap as DP's seam"; bigger means worse. The column difference says
+            # how far apart the two seams are, on average (0 = the very same pixels).
             dp_cost = seam_cost(first_energy, dp_first)
             row["first_cost_vs_dp"] = f"{first_cost / dp_cost:.3f}" if dp_cost > 0 else "n/a"
             row["mean_col_diff_vs_dp"] = f"{np.mean(np.abs(first - dp_first)):.2f}"
@@ -125,6 +139,7 @@ def compare(
             save_image(result.image, out_dir / f"{name}_{algorithm.key}_result.png")
             save_image(overlay, out_dir / f"{name}_{algorithm.key}_seams.png")
 
+    # Zoom tiny test images up (to about 240 px wide) so the seams are visible in the montage.
     if out_dir is not None and rows:
         zoom = max(1, 240 // image.shape[1])
         montage(grid, zoom=zoom).save(out_dir / f"{name}_comparison.png")
@@ -144,6 +159,7 @@ def scaling(
     Returns the timing rows and, for each algorithm, the fitted exponent ``k`` in
     ``time ~ (H*W)^k``.
     """
+    # A fixed seed means every algorithm and every run sees the same random energy maps.
     rng = np.random.default_rng(seed)
     rows: list[dict] = []
     samples: dict[str, list[tuple[int, float]]] = {a.key: [] for a in algorithms}
@@ -152,6 +168,8 @@ def scaling(
         energy.flags.writeable = False
         row: dict = {"size": f"{n}x{n}", "pixels": n * n}
         for algorithm in algorithms:
+            # Time just the seam finder (no energy map, no removal), several times, and keep the
+            # fastest run: it is the least disturbed by other programs.
             times = []
             for _ in range(max(1, repeat)):
                 t = time.perf_counter()
@@ -162,6 +180,9 @@ def scaling(
             samples[algorithm.key].append((n * n, best))
         rows.append(row)
 
+    # If time ~ pixels^k, then log(time) = k * log(pixels) + c, which is a straight line. So
+    # fitting a line through the log-log points gives k as its slope: about 1 means linear,
+    # about 2 means quadratic. We need at least two sizes, and a time of zero can't be logged.
     exponents = {}
     for key, pts in samples.items():
         pts = [(p, t) for p, t in pts if t > 0]
@@ -207,6 +228,9 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main(argv: Sequence[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
+
+    # Benchmark only what's finished and say so about the rest, so a half-done team project
+    # still gives useful numbers.
     ready, pending = _split_implemented(_resolve_algorithms(args.algorithms))
     for algorithm in pending:
         print(f"skipping {algorithm.label}: not implemented yet ({algorithm.source})")

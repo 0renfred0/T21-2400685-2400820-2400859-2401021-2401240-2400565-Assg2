@@ -42,9 +42,19 @@ def find_vertical_seam_greedy(energy: np.ndarray) -> np.ndarray:
     """
     h, w = energy.shape
     seam = np.empty(h, dtype=np.intp)
+
+    # Start at the cheapest pixel in the top row (the leftmost one if two of them tie).
     seam[0] = np.argmin(energy[0])
+
     for i in range(1, h):
         j = seam[i - 1]
+
+        # From column j we may only step to j - 1, j or j + 1, and never off the edge of the
+        # image, so clamp the window. (The slice end is exclusive, hence the + 2.)
         lo, hi = max(j - 1, 0), min(j + 2, w)
+
+        # Take the cheapest of those few pixels. argmin gives a position inside the small window,
+        # so add lo to turn it back into a real column. This is the "greedy" part: we never look
+        # further ahead than one row, which is why it can walk straight into an expensive area.
         seam[i] = lo + np.argmin(energy[i, lo:hi])
     return seam
