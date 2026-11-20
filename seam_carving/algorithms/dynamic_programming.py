@@ -45,18 +45,46 @@ def find_vertical_seam_dp(energy: np.ndarray) -> np.ndarray:
     only int8 parent offsets are stored for the full image. Ties choose the leftmost parent.
     """
     h, w = energy.shape
+
+    # Row 0 is the easy base case: a seam that only has one pixel so far costs exactly that
+    # pixel's energy. astype() makes a copy, which matters because `energy` is read-only.
     costs = energy[0].astype(np.float64)
+
+    # We only ever look at the previous row of costs, so there's no need to keep the whole
+    # M table around. What we do have to remember is which way each cell came from, because
+    # that's how we rebuild the seam afterwards. Each step is -1, 0 or +1 (left, straight,
+    # right), so a tiny int8 is plenty.
     back = np.zeros((h, w), dtype=np.int8)
     columns = np.arange(w)
+
+    # Forward pass: fill in one row at a time, top to bottom. Every cell in a row can be
+    # worked out at the same time (they don't depend on each other), so we let NumPy do the
+    # whole row in one go instead of looping over the columns in Python.
     for i in range(1, h):
+        # Pad with +inf on both sides. That way a pixel on the edge "sees" an impossible
+        # parent where the missing neighbour would be, and the min never picks it.
         padded = np.pad(costs, 1, constant_values=np.inf)
+
+        # Stack the three candidates side by side: the first line of `parents` is the up-left
+        # neighbour of every column, the second is straight up, the third is up-right.
+        # So parents[:, j] holds the three options for column j.
         parents = np.stack((padded[:-2], padded[1:-1], padded[2:]))
+
+        # Pick the cheapest candidate per column. (argmin returns the first one on a tie, so
+        # ties go to the left.) choices is 0/1/2, so subtracting 1 turns it into a -1/0/+1 step.
         choices = np.argmin(parents, axis=0)
         back[i] = choices - 1
+
+        # M[i, j] = e[i, j] + the cost of the best parent we just picked.
         costs = energy[i] + parents[choices, columns]
 
+    # The cheapest seam finishes at the cheapest cell in the bottom row...
     seam = np.empty(h, dtype=np.intp)
     seam[-1] = np.argmin(costs)
+
+    # ...then we walk back up, following the saved steps, to see where it came from.
+    # back[i, j] says how far left or right the parent sits from column j, so adding it to
+    # the current column lands us on the seam's column in the row above.
     for i in range(h - 1, 0, -1):
         seam[i - 1] = seam[i] + back[i, seam[i]]
     return seam
